@@ -1,24 +1,63 @@
-import React from 'react';
-import logo from './logo.svg';
+import React, {useState} from 'react';
 import './App.css';
+import VirtualTable from './components/virtualTable';
 
 function App() {
+  const columns: any[] = [
+    {
+      title: 'Name',
+      dataIndex: 'name',
+      fixed: 'left',
+    },
+    {
+      title: 'Age',
+      dataIndex: 'age',
+      sorter: (a: any, b: any) => {
+        return a.rowKey - b.rowKey;
+      }
+    },
+    {
+      title: 'Address',
+      dataIndex: 'address',
+      render: (val: any) => {
+        return (
+          <span style={{color: 'red'}}>{val}</span>
+        );
+      }
+    }
+  ];
+
+  const data = [];
+  for (let i = 0; i < 46; i++) {
+    data.push({
+      key: i,
+      rowKey: i,
+      name: `Edward King ${i}`,
+      age: 32,
+      address: `London, Park Lane no. ${i}`
+    });
+  }
+
+  const [selections, setSelections] = useState<any[]>([]);
+
   return (
     <div className="App">
-      <header className="App-header">
-        <img src={logo} className="App-logo" alt="logo" />
-        <p>
-          Edit <code>src/App.tsx</code> and save to reload.
-        </p>
-        <a
-          className="App-link"
-          href="https://reactjs.org"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Learn React
-        </a>
-      </header>
+      <VirtualTable
+        minWidth={500}
+        rowHeight={52}
+        columns={columns}
+        dataSource={data}
+        rowKey='rowKey'
+        rowSelection={
+          {
+            type: 'checkbox',
+            selectedRowKeys: selections,
+            onChange: (selectedRowKeys, selectedRows) => {
+              setSelections(selectedRowKeys);
+            }
+          }
+        }
+      />
     </div>
   );
 }
