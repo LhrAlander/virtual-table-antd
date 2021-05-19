@@ -1,0 +1,4 @@
+.ant-table-thead > tr > th.checkbox-th {
+    padding: 0;
+    width: 0;
+}
