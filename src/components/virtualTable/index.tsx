@@ -7,6 +7,7 @@ import {CSSProperties, useEffect, useLayoutEffect, useMemo, useRef, useState} fr
 import './style.css';
 import * as React from 'react';
 import {ColumnProps} from 'antd/es/table';
+import HeadSorter, {SortEnum} from '../headSorter';
 
 const ListRow = React.memo((props: {
   style: CSSProperties;
@@ -26,6 +27,7 @@ const ListRow = React.memo((props: {
     rowKey,
     dataSource
   } = props;
+
 
   const wrapStyle: CSSProperties = {
     ...style,
@@ -103,6 +105,8 @@ export default function VirtualTable<T>(props: IVirtualTableProps<T>) {
     rowSelection
   } = props;
 
+
+  const [sortInfo, setSortInfo] = useState<{ [key: string]: SortEnum }>({});
   const [dataSource, setDataSource] = useState<readonly T[]>([]);
   const [displayData, setDisplayData] = useState<T[]>([]);
   const [tableWidth, setTableWidth] = useState<number>(0);
@@ -227,80 +231,113 @@ export default function VirtualTable<T>(props: IVirtualTableProps<T>) {
             }, 0)
           });
         }
-        return <th
-          style={columnStyle}
-          className='ant-table-cell'
-        >{column.title}</th>;
+        return (
+          <th
+            style={columnStyle}
+            className='ant-table-cell'
+          >
+            {column.title}
+            {
+              column.sorter ? <HeadSorter
+                sortState={sortInfo[column.dataIndex]}
+                onSort={status => {
+                  console.log('handle sorter', status);
+                  setSortInfo(prevState => {
+                    return {
+                      [column.dataIndex]: status
+                    };
+                  });
+                  if (status === SortEnum.NORMAL) {
+                    console.log('恢复')
+                    setDisplayData(dataSource);
+                  } else if (status === SortEnum.ASC) {
+                    console.log('升序')
+                    setDisplayData([...dataSource].sort(column.sorter));
+                  } else {
+                    console.log('降序')
+                    setDisplayData([...dataSource].sort((a, b) => -1 * column.sorter(a, b)));
+                  }
+                }
+                }
+              /> : null
+            }
+          </th>
+        );
       })}
     </tr>;
   };
 
   const renderVirtualRows = (rawData, {scrollbarSize, ref, onScroll}: any) => {
-    ref.current = connectObject;
-    if (!rawData.length) {
-      return null;
-    }
+      ref.current = connectObject;
+      if (!rawData.length) {
+        return null;
+      }
 
-    return (
-      <List
-        itemSize={() => rowHeight}
-        height={tableHeight}
-        itemCount={rawData.length}
-        width={tableWidth}
-        outerRef={bodyRef}
-      >
-        {
-          ({index, style}) => {
-            return <ListRow
-              style={style}
-              columns={columns}
-              data={rawData[index]}
-              key={index}
-              rowSelection={rowSelection}
-              dataSource={dataSource}
-              rowKey={props.rowKey}
-              rowWidth={scroll.x > tableWidth ? scroll.x : tableWidth}
-            />;
+      return (
+        <List
+          itemSize={() => rowHeight}
+          height={tableHeight}
+          itemCount={rawData.length}
+          width={tableWidth}
+          outerRef={bodyRef}
+        >
+          {
+            ({index, style}) => {
+              return <ListRow
+                style={style}
+                columns={columns}
+                data={rawData[index]}
+                key={index}
+                rowSelection={rowSelection}
+                dataSource={dataSource}
+                rowKey={props.rowKey}
+                rowWidth={scroll.x > tableWidth ? scroll.x : tableWidth}
+              />;
+            }
           }
-        }
-      </List>
-    );
-  };
+        </List>
+      );
+    }
+  ;
 
   useLayoutEffect(() => {
-    if (!bodyRef.current || bodyRef.current.hasScrollListener) {
-      return;
-    }
-
-    bodyRef.current.addEventListener('scroll', e => {
-      const left = e.target.scrollLeft;
-      if (trRef.current.scrollLeft !== left) {
-        trRef.current.scrollLeft = left;
+      if (!bodyRef.current || bodyRef.current.hasScrollListener) {
+        return;
       }
-    });
-    bodyRef.current.hasScrollListener = true;
-  });
+
+      bodyRef.current.addEventListener('scroll', e => {
+        const left = e.target.scrollLeft;
+        if (trRef.current.scrollLeft !== left) {
+          trRef.current.scrollLeft = left;
+        }
+      });
+      bodyRef.current.hasScrollListener = true;
+    }
+  );
 
   useEffect(() => {
-    setDataSource(props.dataSource || []);
-  }, [props.dataSource]);
+      setDataSource(props.dataSource || []);
+      setDisplayData(props.dataSource || []);
+    }
+    , [props.dataSource]);
 
   useEffect(() => {
-    function resizeTable() {
-      const viewPortHeight: number = document.body.clientHeight;
-      const customHeight = scroll && scroll.y ? +scroll.y || Number.MAX_SAFE_INTEGER : Number.MAX_SAFE_INTEGER;
-      const setHeight = viewPortHeight <= customHeight
-        ? viewPortHeight
-        : customHeight;
+      function resizeTable() {
+        const viewPortHeight: number = document.body.clientHeight;
+        const customHeight = scroll && scroll.y ? +scroll.y || Number.MAX_SAFE_INTEGER : Number.MAX_SAFE_INTEGER;
+        const setHeight = viewPortHeight <= customHeight
+          ? viewPortHeight
+          : customHeight;
 
-      if (setHeight !== tableHeight) {
-        setTableHeight(setHeight);
+        if (setHeight !== tableHeight) {
+          setTableHeight(setHeight);
+        }
       }
-    }
 
-    window.addEventListener('resize', resizeTable);
-    return () => window.removeEventListener('resize', resizeTable);
-  }, []);
+      window.addEventListener('resize', resizeTable);
+      return () => window.removeEventListener('resize', resizeTable);
+    }
+    , []);
 
   return (
     <ResizeObserver
@@ -315,7 +352,7 @@ export default function VirtualTable<T>(props: IVirtualTableProps<T>) {
           y: tableHeight - 100
         }}
         columns={columns}
-        dataSource={dataSource}
+        dataSource={displayData}
         pagination={false}
         components={{
           body: renderVirtualRows,
