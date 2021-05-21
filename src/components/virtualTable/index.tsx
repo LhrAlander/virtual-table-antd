@@ -1,212 +1,331 @@
-import {VariableSizeGrid as Grid} from 'react-window'
-import ResizeObserver from 'rc-resize-observer'
-import {Checkbox, Table} from 'antd'
-import {CustomizeScrollBody, IVirtualTableProps} from './types'
-import {useEffect, useLayoutEffect, useMemo, useRef, useState} from 'react'
-import './style.css'
+import {VariableSizeGrid as Grid} from 'react-window';
+import {VariableSizeList as List} from 'react-window';
+import ResizeObserver from 'rc-resize-observer';
+import {Checkbox, Table, TableProps} from 'antd';
+import {CustomizeScrollBody, IVirtualTableProps} from './types';
+import {CSSProperties, useEffect, useLayoutEffect, useMemo, useRef, useState} from 'react';
+import './style.css';
+import * as React from 'react';
+import {ColumnProps} from 'antd/es/table';
+
+const ListRow = React.memo((props: {
+  style: CSSProperties;
+  columns: ColumnProps<any>[];
+  data: any;
+  rowWidth: number;
+  rowSelection: TableProps<any>['rowSelection'];
+  rowKey: string;
+  dataSource: any[];
+}) => {
+  const {
+    style,
+    data,
+    columns,
+    rowWidth,
+    rowSelection,
+    rowKey,
+    dataSource
+  } = props;
+
+  const wrapStyle: CSSProperties = {
+    ...style,
+    display: 'flex',
+    width: rowWidth
+  };
+
+  return (
+    <div
+      style={wrapStyle}
+      className='hello'
+    >
+      {
+        columns.map((column, index) => {
+          const itemStyle: CSSProperties = {
+            width: column.width!,
+            height: style.height,
+            background: 'white',
+            flexShrink: 0,
+            flexGrow: 1
+          };
+
+          if (column.fixed === 'left') {
+            Object.assign(itemStyle, {
+              position: 'sticky',
+              zIndex: 1,
+              left: columns.slice(0, index).reduce<number>((l, item) => {
+                return l + parseInt(item.width! + '');
+              }, 0)
+            });
+          }
+
+          if (column.type === 'select') {
+            return <div style={itemStyle}>
+              <Checkbox
+                checked={rowSelection.selectedRowKeys.includes(data[rowKey])}
+                onChange={e => {
+                  let keys = [...rowSelection.selectedRowKeys];
+                  const key = data[rowKey];
+                  if (keys.includes(key)) {
+                    keys = keys.filter(_ => _ !== key);
+                  } else {
+                    keys = [...keys, key];
+                  }
+                  rowSelection.onChange(keys, dataSource.map(item => {
+                    return keys.includes(item[rowKey]);
+                  }));
+                }}
+              />
+            </div>;
+          }
+
+          return (
+            <div
+              style={itemStyle}
+              key={column.dataIndex}
+            >
+              {
+                column.render ? column.render(data[column.dataIndex], data, index) : <div>{data[column.dataIndex]}</div>
+              }
+            </div>
+          );
+        })
+      }
+    </div>
+  );
+});
+
 
 export default function VirtualTable<T>(props: IVirtualTableProps<T>) {
   const {
     minWidth = 100,
     rowHeight = 54,
     scroll,
-    rowSelection,
-  } = props
+    rowSelection
+  } = props;
 
-  const [dataSource, setDataSource] = useState<readonly T[]>([])
-  const [displayData, setDisplayData] = useState<T[]>([])
-  const [tableWidth, setTableWidth] = useState<number>(0)
-  const [tableHeight, setTableHeight] = useState<number>(scroll && scroll.y ? +scroll.y || document.body.clientHeight : document.body.clientHeight)
+  const [dataSource, setDataSource] = useState<readonly T[]>([]);
+  const [displayData, setDisplayData] = useState<T[]>([]);
+  const [tableWidth, setTableWidth] = useState<number>(0);
+  const [tableHeight, setTableHeight] = useState<number>(scroll && scroll.y ? +scroll.y || document.body.clientHeight : document.body.clientHeight);
 
-  const scrollTopRef = useRef<number>(0)
+  const trRef = useRef<HTMLElement>(null);
 
-  const gridRef = useRef<any>()
+  const gridRef = useRef<any>();
+  const bodyRef = useRef<any>();
   const [connectObject] = useState<any>(() => {
-    const obj = {}
+    const obj = {};
     Object.defineProperty(obj, 'scrollLeft', {
       get: () => null,
       set: (scrollLeft: number) => {
         if (gridRef.current) {
-          gridRef.current.scrollTo({scrollLeft})
+          gridRef.current.scrollTo({scrollLeft});
         }
       }
-    })
+    });
 
-    return obj
-  })
-
-  const resetVirtualGrid = () => {
-    if (gridRef.current) {
-      gridRef.current.resetAfterIndices({
-        columnIndex: 0,
-        shouldForceUpdate: true
-      })
-    }
-  }
+    return obj;
+  });
 
   const columns = useMemo(() => {
-    const _columns = [...(props.columns || [])]
+    const _columns = [...(props.columns || [])];
     if (rowSelection) {
       _columns.unshift({
-        width: 0,
-        // width: rowSelection.columnWidth || 32,
-        className: 'checkbox-th',
-        fixed: 'left'
-      })
+        fixed: 'left',
+        type: 'select',
+        width: rowSelection.columnWidth || 32,
+        title: <Checkbox
+          indeterminate={
+            rowSelection.selectedRowKeys.length !== dataSource.length && rowSelection.selectedRowKeys.length > 0
+          }
+          checked={rowSelection.selectedRowKeys.length === dataSource.length && rowSelection.selectedRowKeys.length > 0}
+          onChange={e => {
+            const checked = e.target.checked;
+            if (!checked) {
+              rowSelection.onChange([], []);
+            } else {
+              rowSelection.onChange(dataSource.map((item) => item[props.rowKey]), dataSource);
+            }
+          }
+          }
+        />
+      });
     }
-    const widthColumnCount = _columns.filter(({width}) => !width).length - (rowSelection ? 1 : 0)
-    const alreadyWidth = _columns.map(({width}) => width || 0).reduce<number>((res, width) => res + parseInt(width as string), 0)
-    const reserveWidth = tableWidth - alreadyWidth - (rowSelection && rowSelection.columnWidth ? parseInt(rowSelection.columnWidth + '') || 32 : 0)
-    const autoWidth = Math.floor(reserveWidth / widthColumnCount)
+    const widthColumnCount = _columns.filter(({width}) => !width).length - (rowSelection ? 1 : 0);
+    const alreadyWidth = _columns.map(({width}) => width || 0)
+      .reduce<number>((res, width) => res + parseInt(width as string), 0);
+    const reserveWidth = tableWidth - alreadyWidth - (rowSelection && rowSelection.columnWidth ? parseInt(rowSelection.columnWidth + '') || 32 : 0);
+    const autoWidth = Math.floor(reserveWidth / widthColumnCount);
 
     return _columns.map(c => {
       if (typeof c.width === 'number') {
-        return c
+        return c;
       }
       return {
         ...c,
         width: autoWidth
-      }
-    })
+      };
+    });
 
-  }, [props.columns, minWidth, tableWidth])
+  }, [props.columns, minWidth, tableWidth]);
 
-  const renderVirtualList = (rawData: readonly any[], {scrollbarSize, ref, onScroll}: any) => {
-    ref.current = connectObject
-    const totalHeight = rawData.length * rowHeight
+  const Wrapper = props => {
+    useLayoutEffect(() => {
+      const handleScroll = e => {
+        const left = e.target.scrollLeft;
+        if (bodyRef.current.scrollLeft === left) {
+          return;
+        }
+        bodyRef.current.scrollLeft = left;
+      };
+
+      trRef.current.addEventListener('scroll', handleScroll);
+      return () => {
+        trRef.current.removeEventListener('scroll', handleScroll);
+      };
+    }, []);
+    return <thead
+      className='hello-wrapper ant-table-thead'
+
+      ref={el => {
+        if (el) {
+          trRef.current = el.parentElement.parentElement;
+        }
+      }}
+    >
+    {
+      props.children
+    }
+    </thead>;
+  };
+
+  const HeaderRow = props => {
+    const styleObj: CSSProperties = {
+      display: 'flex',
+      width: scroll.x > tableWidth ? scroll.x : tableWidth
+    };
+
+    return <tr
+      className='hello-row'
+      style={styleObj}
+    >
+      {props.children.map((item, index) => {
+        const column = columns.find(({dataIndex}) => dataIndex === item.props.column.dataIndex);
+        const columnStyle: CSSProperties = {
+          width: column.width,
+          flexShrink: 0,
+          flexGrow: 1,
+          display: 'flex',
+          alignItems: 'center',
+          boxSizing: 'border-box'
+        };
+        if (column.fixed === 'left') {
+          Object.assign(columnStyle, {
+            position: 'sticky',
+            zIndex: 1,
+            left: columns.slice(0, index).reduce<number>((l, item) => {
+              return l + parseInt(item.width! + '');
+            }, 0)
+          });
+        }
+        return <th
+          style={columnStyle}
+          className='ant-table-cell'
+        >{column.title}</th>;
+      })}
+    </tr>;
+  };
+
+  const renderVirtualRows = (rawData, {scrollbarSize, ref, onScroll}: any) => {
+    ref.current = connectObject;
+    if (!rawData.length) {
+      return null;
+    }
+
     return (
-      <Grid
-        ref={gridRef}
-        overscanColumnCount={columns.length}
-        columnCount={columns.length}
-        columnWidth={(index: number) => {
-          if (rowSelection && index === 0) {
-            return Number(rowSelection.columnWidth || '32')
-          }
-          const {width} = columns[index]
-          return totalHeight > tableHeight && index === columns.length - 1
-            ? width as number - scrollbarSize - 1
-            : width as number
-        }}
-        height={tableHeight - 100}
-        rowCount={dataSource.length}
-        rowHeight={() => rowHeight}
+      <List
+        itemSize={() => rowHeight}
+        height={tableHeight}
+        itemCount={rawData.length}
         width={tableWidth}
-        onScroll={({scrollLeft, scrollTop}) => {
-          scrollTopRef.current = scrollLeft
-          onScroll({scrollLeft})
-        }}
+        outerRef={bodyRef}
       >
-        {({
-            columnIndex,
-            rowIndex,
-            style
-          }: {
-          columnIndex: number;
-          rowIndex: number;
-          style: React.CSSProperties;
-        }) => {
-          // 计算sticky后需要位移
-          const transformY = parseInt(style.top as string) - scrollTopRef.current
-
-          const row = rawData[rowIndex]
-          const column: any = columns[columnIndex]
-          const styleObj = {...style, textAlign: column.align || 'left', padding: '16px'}
-          if (rowSelection && columnIndex === 0) {
-            const rowKey = row[props.rowKey as string]
-            return <div
-              style={{
-                ...styleObj,
-                left: scrollTopRef.current,
-                zIndex: 1
-              }}
-            >
-              <Checkbox
-                checked={rowSelection.selectedRowKeys!.includes(rowKey)}
-                onChange={() => {
-                  const selections = [...rowSelection!.selectedRowKeys!]
-                  let newSelections: any[] = []
-                  if (selections.includes(rowKey)) {
-                    newSelections = selections.filter(key => key !== rowKey)
-                  } else {
-                    newSelections = [...selections, rowKey]
-                  }
-                  const selectedRows = dataSource.filter((item: any) => {
-                    const key = item[props.rowKey as string]
-                    return newSelections.includes(key)
-                  })
-                  if (rowSelection && rowSelection.onChange) {
-                    rowSelection.onChange(newSelections, selectedRows)
-                  }
-                }}
-              />
-            </div>
+        {
+          ({index, style}) => {
+            return <ListRow
+              style={style}
+              columns={columns}
+              data={rawData[index]}
+              key={index}
+              rowSelection={rowSelection}
+              dataSource={dataSource}
+              rowKey={props.rowKey}
+              rowWidth={scroll.x > tableWidth ? scroll.x : tableWidth}
+            />;
           }
-          let ele: any = null
-          if (column.render) {
-            ele = column.render(row[column.dataIndex], row, rowIndex)
-          } else {
-            ele = (rawData[rowIndex] as any)[(columns as any)[columnIndex].dataIndex]
-          }
-
-          if (column.fixed === 'left') {
-            Object.assign(styleObj, {
-              left: parseInt(style.left as string) + scrollTopRef.current,
-              zIndex: 1
-            })
-          }
-
-          return (
-            <div style={{...styleObj}}>
-              {ele}
-            </div>
-          )
         }
-        }
-      </Grid>
-    )
-  }
+      </List>
+    );
+  };
+
+  useLayoutEffect(() => {
+    if (!bodyRef.current || bodyRef.current.hasScrollListener) {
+      return;
+    }
+
+    bodyRef.current.addEventListener('scroll', e => {
+      const left = e.target.scrollLeft;
+      if (trRef.current.scrollLeft !== left) {
+        trRef.current.scrollLeft = left;
+      }
+    });
+    bodyRef.current.hasScrollListener = true;
+  });
 
   useEffect(() => {
-    setDataSource(props.dataSource || [])
-  }, [props.dataSource])
-  useEffect(() => resetVirtualGrid, [tableWidth, tableHeight])
+    setDataSource(props.dataSource || []);
+  }, [props.dataSource]);
+
   useEffect(() => {
     function resizeTable() {
-      const viewPortHeight: number = document.body.clientHeight
-      const customHeight = scroll && scroll.y ? +scroll.y || Number.MAX_SAFE_INTEGER : Number.MAX_SAFE_INTEGER
+      const viewPortHeight: number = document.body.clientHeight;
+      const customHeight = scroll && scroll.y ? +scroll.y || Number.MAX_SAFE_INTEGER : Number.MAX_SAFE_INTEGER;
       const setHeight = viewPortHeight <= customHeight
         ? viewPortHeight
-        : customHeight
+        : customHeight;
 
       if (setHeight !== tableHeight) {
-        setTableHeight(setHeight)
+        setTableHeight(setHeight);
       }
     }
 
-    window.addEventListener('resize', resizeTable)
-    return () => window.removeEventListener('resize', resizeTable)
-  }, [])
+    window.addEventListener('resize', resizeTable);
+    return () => window.removeEventListener('resize', resizeTable);
+  }, []);
 
   return (
     <ResizeObserver
       onResize={({width, height}) => {
-        setTableWidth(width)
+        setTableWidth(width);
       }}
     >
       <Table<any>
         {...props}
         scroll={{
           ...scroll,
-          y: tableHeight - 100,
+          y: tableHeight - 100
         }}
         columns={columns}
         dataSource={dataSource}
         pagination={false}
         components={{
-          body: renderVirtualList
+          body: renderVirtualRows,
+          header: {
+            wrapper: Wrapper,
+            row: HeaderRow
+          }
         }}
+        rowSelection={undefined}
       />
     </ResizeObserver>
-  )
+  );
 }
